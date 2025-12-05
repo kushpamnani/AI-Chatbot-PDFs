@@ -27,19 +27,6 @@ An AI-powered document question answering app that lets you upload any PDF and c
 
 ---
 
-## 📂 Project Structure
-
-`pdf-qa-chatbot/
-├── app.py               *# Main Streamlit app*
-├── requirements.txt     *# Python dependencies*
-├── .env                 *# Environment variables (not committed)*
-├── assets/
-│   └── style.css        *# Custom dark theme + chat styling*
-├── data/
-│   └── ai-research-paper.pdf   *# Sample PDF*
-└── chroma_db/           *# Chroma vector store (auto-created)*`
-
----
 
 ## 🔐 Environment Variables
 
