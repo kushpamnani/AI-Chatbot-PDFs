@@ -112,6 +112,9 @@ def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
     for page in reader.pages:
         text += page.extract_text() or ""
     
+    with open("debug_extracted.txt", "w") as f:
+        f.write(text)
+
     if not text.strip():
         return None, None, "Could not extract text from PDF"
     
