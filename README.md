@@ -89,3 +89,7 @@ You can get an API key from the Groq console.
 - Answers are limited to the content in the uploaded PDF.
 - If relevant context is not found, the bot responds that it cannot answer the question.
 - First question after uploading a large PDF may take a few seconds while embeddings and Chroma index are built.
+
+## Status
+
+Actively maintained – currently testing and tweaking the RAG pipeline and UI
