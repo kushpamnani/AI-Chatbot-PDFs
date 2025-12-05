@@ -92,4 +92,4 @@ You can get an API key from the Groq console.
 
 ## Status
 
-Actively testing and tweaking the RAG pipeline (adding ocr for text extraction via images) and UI
+Actively testing and tweaking the RAG pipeline (adding ocr for text extraction via images)
