@@ -37,7 +37,17 @@ load_css()
 st.markdown("# AI Document Chatbot")
 st.markdown("")
 
-# Sidebar - Clean upload section
+# ---------- Initialize session state (MUST be before using it) ----------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "rag_initialized" not in st.session_state:
+    st.session_state.rag_initialized = False
+
+if "current_doc" not in st.session_state:
+    st.session_state.current_doc = None
+
+# ---------- Sidebar ----------
 with st.sidebar:
     st.markdown("### 1. UPLOAD DOCUMENTS")
     st.markdown("")
@@ -73,18 +83,14 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 2. CHAT WITH YOUR DOCUMENTS")
     st.caption("Ask questions about your PDF")
+    
+    # New Chat button (only when a doc is loaded)
+    if st.session_state.rag_initialized:
+        if st.button("🆕 New Chat", use_container_width=True):
+            st.session_state.messages = []
+            st.rerun()
 
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "rag_initialized" not in st.session_state:
-    st.session_state.rag_initialized = False
-
-if "current_doc" not in st.session_state:
-    st.session_state.current_doc = None
-
-# Initialize RAG chain
+# ---------- RAG setup ----------
 @st.cache_resource(show_spinner=False)
 def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
     """Sets up the complete RAG pipeline"""
@@ -167,14 +173,16 @@ Answer:"""
     
     return rag_chain, len(chunks), doc_name
 
-# Process document
+# ---------- Process document ----------
 rag_chain = None
 num_chunks = 0
 doc_name = None
 
 with st.spinner("⏳ Processing document..."):
     if use_sample:
-        rag_chain, num_chunks, doc_name = setup_rag_chain(pdf_path="data/ai-research-paper.pdf")
+        rag_chain, num_chunks, doc_name = setup_rag_chain(
+            pdf_path="data/ai-research-paper.pdf"
+        )
         if rag_chain:
             st.session_state.rag_initialized = True
             st.session_state.current_doc = "sample"
@@ -189,7 +197,10 @@ with st.spinner("⏳ Processing document..."):
                 tmp_path = tmp_file.name
             
             with open(tmp_path, "rb") as f:
-                rag_chain, num_chunks, doc_name = setup_rag_chain(_pdf_file=f, original_filename=original_filename)
+                rag_chain, num_chunks, doc_name = setup_rag_chain(
+                    _pdf_file=f,
+                    original_filename=original_filename
+                )
             
             os.unlink(tmp_path)
             
@@ -206,19 +217,19 @@ with st.spinner("⏳ Processing document..."):
             st.info("👈 Upload a PDF document to start chatting")
             st.session_state.rag_initialized = False
 
-# Document info display
+# ---------- Document info ----------
 if st.session_state.rag_initialized and rag_chain:
     st.markdown(
         f"""
         <div class="doc-info">
-            <p><strong>📄 Document:</strong> <code>{doc_name}</code></p>
-            <p><strong>🔢 Chunks Indexed:</strong> <code>{num_chunks}</code></p>
+            <p><strong>📄 Document:</strong> {doc_name}</code></p>
+            <p><strong>🔢 Chunks Indexed:</strong> {num_chunks}</code></p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-# Display chat history with custom HTML
+# ---------- Chat history ----------
 if st.session_state.rag_initialized and rag_chain:
     for message in st.session_state.messages:
         if message["role"] == "user":
@@ -261,13 +272,13 @@ if st.session_state.rag_initialized and rag_chain:
             </div>
             """, unsafe_allow_html=True)
 
-# Chat input - FIXED VERSION
+# ---------- Chat input ----------
 if st.session_state.rag_initialized and rag_chain:
     if user_input := st.chat_input("Ask something about your documents..."):
         # Add user message to history
         st.session_state.messages.append({"role": "user", "content": user_input})
         
-        # Display user message immediately (before AI responds)
+        # Display user message immediately
         st.markdown(f"""
         <div style="display: flex; justify-content: flex-end; margin: 1.5rem 0;">
             <div style="
@@ -311,7 +322,6 @@ if st.session_state.rag_initialized and rag_chain:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                
             except Exception as e:
                 error_msg = f"❌ Error: {str(e)}"
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
