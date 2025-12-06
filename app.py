@@ -24,7 +24,6 @@ st.set_page_config(
 
 # Load custom CSS
 def load_css():
-    """Load external CSS file for better code organization"""
     try:
         with open("assets/style.css") as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
@@ -88,7 +87,6 @@ with st.sidebar:
     st.markdown("### 2. CHAT WITH YOUR DOCUMENTS")
     st.caption("Ask questions about your PDF(s)")
     
-    # New Chat button (only when a doc is loaded)
     if st.session_state.rag_initialized:
         if st.button("🆕 New Chat", use_container_width=True):
             st.session_state.messages = []
@@ -97,8 +95,6 @@ with st.sidebar:
 # ---------- RAG setup ----------
 @st.cache_resource(show_spinner=False)
 def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
-    """Sets up the complete RAG pipeline for ONE PDF"""
-    
     if _pdf_file is not None:
         reader = PdfReader(_pdf_file)
         doc_name = original_filename if original_filename else "Uploaded document"
@@ -110,7 +106,6 @@ def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
     else:
         return None, None, "No PDF provided"
     
-    # Extract text
     text = ""
     for page in reader.pages:
         text += page.extract_text() or ""
@@ -118,7 +113,6 @@ def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
     if not text.strip():
         return None, None, "Could not extract text from PDF"
     
-    # Split into chunks
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200,
@@ -126,10 +120,8 @@ def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
     )
     chunks = splitter.split_text(text)
     
-    # Create embeddings
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
-    # Vector store
     collection_name = f"docs_{hash(doc_name)}"
     vectorstore = Chroma.from_texts(
         texts=chunks,
@@ -140,7 +132,6 @@ def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
     
     retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
     
-    # LLM
     groq_api_key = os.getenv("GROQ_API_KEY")
     if not groq_api_key:
         return None, None, "GROQ_API_KEY not found"
@@ -152,7 +143,6 @@ def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
         max_tokens=500
     )
     
-    # Prompt
     prompt = ChatPromptTemplate.from_template(
         """You are a helpful AI assistant. Use ONLY the following context to answer.
 
@@ -166,7 +156,6 @@ Question: {question}
 Answer:"""
     )
     
-    # RAG chain
     rag_chain = (
         {"context": retriever, "question": RunnablePassthrough()}
         | prompt
@@ -179,22 +168,27 @@ Answer:"""
 # ---------- Process document ----------
 rag_chain = None
 num_chunks = 0
-doc_name = None
+doc_name_display = None
 
 with st.spinner("⏳ Processing document..."):
     if use_sample:
-        rag_chain, num_chunks, doc_name = setup_rag_chain(
+        rag_chain, num_chunks, single_name = setup_rag_chain(
             pdf_path="data/ai-research-paper.pdf"
         )
         if rag_chain:
             st.session_state.rag_initialized = True
-            st.session_state.current_doc = "sample"
+            st.session_state.current_doc = single_name
+            doc_name_display = single_name
         else:
             st.error("❌ Could not load sample document")
             st.session_state.rag_initialized = False
     else:
-        # For now, process only the FIRST uploaded file (we'll extend later)
         if uploaded_files and len(uploaded_files) > 0:
+            # show all uploaded names together
+            all_names = [f.name for f in uploaded_files]
+            doc_name_display = " and ".join(all_names)
+            
+            # still only index the first file for now
             first_file = uploaded_files[0]
             original_filename = first_file.name
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -202,7 +196,7 @@ with st.spinner("⏳ Processing document..."):
                 tmp_path = tmp_file.name
             
             with open(tmp_path, "rb") as f:
-                rag_chain, num_chunks, doc_name = setup_rag_chain(
+                rag_chain, num_chunks, _ = setup_rag_chain(
                     _pdf_file=f,
                     original_filename=original_filename
                 )
@@ -211,10 +205,7 @@ with st.spinner("⏳ Processing document..."):
             
             if rag_chain:
                 st.session_state.rag_initialized = True
-                new_doc = original_filename
-                if st.session_state.current_doc != new_doc:
-                    st.session_state.messages = []
-                    st.session_state.current_doc = new_doc
+                st.session_state.current_doc = doc_name_display
             else:
                 st.error("❌ Could not process PDF")
                 st.session_state.rag_initialized = False
@@ -223,12 +214,12 @@ with st.spinner("⏳ Processing document..."):
             st.session_state.rag_initialized = False
 
 # ---------- Document info ----------
-if st.session_state.rag_initialized and rag_chain:
+if st.session_state.rag_initialized and rag_chain and doc_name_display:
     st.markdown(
         f"""
         <div class="doc-info">
-            <p><strong>📄 Document:</strong> {doc_name}</p>
-            <p><strong>🔢 Chunks Indexed:</strong> {num_chunks}</p>
+            <p><strong>📄 Document(s):</strong> {doc_name_display}</p>
+            <p><strong>🔢 Chunks Indexed (first doc):</strong> {num_chunks}</p>
         </div>
         """,
         unsafe_allow_html=True
@@ -309,7 +300,6 @@ if st.session_state.rag_initialized and rag_chain:
                         background-color: #1e293b;
                         color: #e8e8e8;
                         padding: 1.25rem 1.75rem;
-                        border-radius: 18px;
                         max-width: 85%;
                         border-radius: 18px;
                         border-bottom-left-radius: 4px;
