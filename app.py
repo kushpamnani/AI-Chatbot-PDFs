@@ -37,7 +37,7 @@ load_css()
 st.markdown("# AI Document Chatbot")
 st.markdown("")
 
-# ---------- Initialize session state (MUST be before using it) ----------
+# ---------- Initialize session state ----------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -58,22 +58,26 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
-    uploaded_file = None
     use_sample = (upload_option == "Use Sample Document")
+    uploaded_files = None
     
     if not use_sample:
         st.markdown("")
-        uploaded_file = st.file_uploader(
-            "Click to upload or drag & drop",
+        uploaded_files = st.file_uploader(
+            "Click to upload or drag & drop (max 2 PDFs)",
             type="pdf",
-            help="PDF files only (max 200MB)",
-            accept_multiple_files=False,
+            help="PDF files only (max 200MB each)",
+            accept_multiple_files=True,
             label_visibility="visible"
         )
         
-        if uploaded_file:
-            st.success(f"✅ {uploaded_file.name}")
-            st.caption(f"Size: {uploaded_file.size / 1024:.1f} KB")
+        if uploaded_files:
+            if len(uploaded_files) > 2:
+                st.warning("Please upload at most 2 PDFs.")
+                uploaded_files = uploaded_files[:2]
+            
+            for f in uploaded_files:
+                st.success(f"✅ {f.name} ({f.size / 1024:.1f} KB)")
     else:
         if os.path.exists("data/ai-research-paper.pdf"):
             st.success("✅ Sample document loaded")
@@ -82,7 +86,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 2. CHAT WITH YOUR DOCUMENTS")
-    st.caption("Ask questions about your PDF")
+    st.caption("Ask questions about your PDF(s)")
     
     # New Chat button (only when a doc is loaded)
     if st.session_state.rag_initialized:
@@ -93,11 +97,10 @@ with st.sidebar:
 # ---------- RAG setup ----------
 @st.cache_resource(show_spinner=False)
 def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
-    """Sets up the complete RAG pipeline"""
+    """Sets up the complete RAG pipeline for ONE PDF"""
     
     if _pdf_file is not None:
         reader = PdfReader(_pdf_file)
-        # use the uploaded filename, not the temp file path
         doc_name = original_filename if original_filename else "Uploaded document"
     elif pdf_path is not None:
         if not os.path.exists(pdf_path):
@@ -112,9 +115,6 @@ def setup_rag_chain(_pdf_file=None, pdf_path=None, original_filename=None):
     for page in reader.pages:
         text += page.extract_text() or ""
     
-    with open("debug_extracted.txt", "w") as f:
-        f.write(text)
-
     if not text.strip():
         return None, None, "Could not extract text from PDF"
     
@@ -193,10 +193,12 @@ with st.spinner("⏳ Processing document..."):
             st.error("❌ Could not load sample document")
             st.session_state.rag_initialized = False
     else:
-        if uploaded_file is not None:
-            original_filename = uploaded_file.name
+        # For now, process only the FIRST uploaded file (we'll extend later)
+        if uploaded_files and len(uploaded_files) > 0:
+            first_file = uploaded_files[0]
+            original_filename = first_file.name
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
+                tmp_file.write(first_file.getvalue())
                 tmp_path = tmp_file.name
             
             with open(tmp_path, "rb") as f:
@@ -209,7 +211,7 @@ with st.spinner("⏳ Processing document..."):
             
             if rag_chain:
                 st.session_state.rag_initialized = True
-                new_doc = uploaded_file.name
+                new_doc = original_filename
                 if st.session_state.current_doc != new_doc:
                     st.session_state.messages = []
                     st.session_state.current_doc = new_doc
@@ -217,7 +219,7 @@ with st.spinner("⏳ Processing document..."):
                 st.error("❌ Could not process PDF")
                 st.session_state.rag_initialized = False
         else:
-            st.info("👈 Upload a PDF document to start chatting")
+            st.info("👈 Upload one or more PDFs to start chatting")
             st.session_state.rag_initialized = False
 
 # ---------- Document info ----------
@@ -225,8 +227,8 @@ if st.session_state.rag_initialized and rag_chain:
     st.markdown(
         f"""
         <div class="doc-info">
-            <p><strong>📄 Document:</strong> {doc_name}</code></p>
-            <p><strong>🔢 Chunks Indexed:</strong> {num_chunks}</code></p>
+            <p><strong>📄 Document:</strong> {doc_name}</p>
+            <p><strong>🔢 Chunks Indexed:</strong> {num_chunks}</p>
         </div>
         """,
         unsafe_allow_html=True
@@ -236,7 +238,6 @@ if st.session_state.rag_initialized and rag_chain:
 if st.session_state.rag_initialized and rag_chain:
     for message in st.session_state.messages:
         if message["role"] == "user":
-            # User message - right aligned, green
             st.markdown(f"""
             <div style="display: flex; justify-content: flex-end; margin: 1.5rem 0;">
                 <div style="
@@ -255,7 +256,6 @@ if st.session_state.rag_initialized and rag_chain:
             </div>
             """, unsafe_allow_html=True)
         else:
-            # AI message - left aligned, dark gray
             st.markdown(f"""
             <div style="display: flex; justify-content: flex-start; margin: 1.5rem 0;">
                 <div style="
@@ -278,10 +278,8 @@ if st.session_state.rag_initialized and rag_chain:
 # ---------- Chat input ----------
 if st.session_state.rag_initialized and rag_chain:
     if user_input := st.chat_input("Ask something about your documents..."):
-        # Add user message to history
         st.session_state.messages.append({"role": "user", "content": user_input})
         
-        # Display user message immediately
         st.markdown(f"""
         <div style="display: flex; justify-content: flex-end; margin: 1.5rem 0;">
             <div style="
@@ -300,13 +298,11 @@ if st.session_state.rag_initialized and rag_chain:
         </div>
         """, unsafe_allow_html=True)
         
-        # Show loading indicator
         with st.spinner("🔍 Searching..."):
             try:
                 response = rag_chain.invoke(user_input)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 
-                # Display AI response immediately
                 st.markdown(f"""
                 <div style="display: flex; justify-content: flex-start; margin: 1.5rem 0;">
                     <div style="
@@ -314,8 +310,9 @@ if st.session_state.rag_initialized and rag_chain:
                         color: #e8e8e8;
                         padding: 1.25rem 1.75rem;
                         border-radius: 18px;
-                        border-bottom-left-radius: 4px;
                         max-width: 85%;
+                        border-radius: 18px;
+                        border-bottom-left-radius: 4px;
                         border: 1px solid #334155;
                         box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
                         font-size: 1rem;
@@ -330,7 +327,6 @@ if st.session_state.rag_initialized and rag_chain:
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
                 st.error(error_msg)
         
-        # Rerun to refresh the display
         st.rerun()
 else:
     st.chat_input("Upload a document first...", disabled=True)
